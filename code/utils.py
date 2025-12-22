@@ -23,7 +23,7 @@ try:
     path = join(dirname(__file__), "sources/sampling.cpp")
     sampling = imp_from_filepath(path)
     sampling.seed(world.seed)
-    sample_ext = True
+    sample_ext = False
 except:
     world.cprint("Cpp extension not loaded")
     sample_ext = False
@@ -61,7 +61,7 @@ def UniformSample_original(dataset, neg_ratio = 1):
         S = UniformSample_original_python(dataset)
     return S
 
-def UniformSample_original_python(dataset):
+def UniformSample_original_python(dataset, p_hard=0.3):
     """
     the original impliment of BPR Sampling in LightGCN
     :return:
@@ -75,25 +75,85 @@ def UniformSample_original_python(dataset):
     S = []
     sample_time1 = 0.
     sample_time2 = 0.
-    for i, user in enumerate(users):
+    posSet = None
+    if hasattr(dataset, "posSet"):
+        posSet = dataset.posSet
+
+    for user in users:
         start = time()
         posForUser = allPos[user]
         if len(posForUser) == 0:
             continue
         sample_time2 += time() - start
-        posindex = np.random.randint(0, len(posForUser))
-        positem = posForUser[posindex]
-        while True:
-            negitem = np.random.randint(0, dataset.m_items)
-            if negitem in posForUser:
-                continue
+
+        # sample positive
+        positem = posForUser[np.random.randint(0, len(posForUser))]
+
+        # --- sample negative theo mix hard/easy ---
+        use_hard = (np.random.random() < p_hard)
+
+        # lấy candidate list
+        if use_hard and hasattr(dataset, "hardNeg"):
+            cand = dataset.hardNeg[user]
+            if cand is None or len(cand) == 0:
+                cand = dataset.easyNeg[user] if hasattr(dataset, "easyNeg") else None
+        else:
+            cand = dataset.easyNeg[user] if hasattr(dataset, "easyNeg") else None
+            if cand is None or len(cand) == 0:
+                cand = dataset.hardNeg[user] if hasattr(dataset, "hardNeg") else None
+        # nếu vẫn không có candidate (hiếm) -> fallback random toàn cục
+        if cand is None or len(cand) == 0:
+            # đảm bảo không trùng positive
+            if posSet is not None:
+                ps = posSet[user]
+                while True:
+                    negitem = np.random.randint(0, dataset.m_items)
+                    if negitem not in ps:
+                        break
             else:
-                break
-        S.append([user, positem, negitem])
-        end = time()
-        sample_time1 += end - start
-    total = time() - total_start
+                # posForUser là np.array/list -> membership O(len)
+                while True:
+                    negitem = np.random.randint(0, dataset.m_items)
+                    if negitem not in posForUser:
+                        break
+        else:
+            # sample từ candidate list
+            negitem = int(cand[np.random.randint(0, len(cand))])
+
+            # (an toàn) đảm bảo không nằm trong positives
+            if posSet is not None:
+                ps = posSet[user]
+                if negitem in ps:
+                    # thử lại vài lần rồi fallback random
+                    ok = False
+                    for _ in range(20):
+                        negitem = int(cand[np.random.randint(0, len(cand))])
+                        if negitem not in ps:
+                            ok = True
+                            break
+                    if not ok:
+                        while True:
+                            negitem = np.random.randint(0, dataset.m_items)
+                            if negitem not in ps:
+                                break
+            else:
+                if negitem in posForUser:
+                    ok = False
+                    for _ in range(20):
+                        negitem = int(cand[np.random.randint(0, len(cand))])
+                        if negitem not in posForUser:
+                            ok = True
+                            break
+                    if not ok:
+                        while True:
+                            negitem = np.random.randint(0, dataset.m_items)
+                            if negitem not in posForUser:
+                                break
+
+        S.append([int(user), int(positem), int(negitem)])
+        sample_time1 += time() - start
     return np.array(S)
+
 
 # ===================end samplers==========================
 # =====================utils====================================
