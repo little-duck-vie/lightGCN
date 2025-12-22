@@ -168,7 +168,7 @@ class LastFM(BasicDataset):
 
             self.hardNeg.append(np.array(list(hard_neg), dtype=np.int64))
             self.easyNeg.append(np.array(list(easy_neg), dtype=np.int64))
-            
+
 #-----------------------------------------------------------------------------------------------------------
 #############--------------------Newly Negative Sample for cluster sampler---------------------#############
 #-----------------------------------------------------------------------------------------------------------
@@ -275,7 +275,7 @@ class Loader(BasicDataset):
     gowalla dataset
     """
 
-    def __init__(self,config = world.config,path="../data/gowalla"):
+    def __init__(self,config = world.config,path="../data/gowalla", n_clusters=10, svd_dim=50):
         # train or test
         cprint(f'loading [{path}]')
         self.split = config['A_split']
@@ -341,6 +341,58 @@ class Loader(BasicDataset):
         # pre-calculate
         self._allPos = self.getUserPosItems(list(range(self.n_user)))
         self.__testDict = self.__build_test()
+#-----------------------------------------------------------------------------------------------------------
+#############--------------------Newly Negative Sample for cluster sampler---------------------#############
+#-----------------------------------------------------------------------------------------------------------
+
+        item_user_matrix = self.UserItemNet.T   # sparse matrix
+
+        # Giảm chiều bằng TruncatedSVD (phù hợp với sparse matrix)
+        svd = TruncatedSVD(n_components=svd_dim, random_state=42)
+        item_factors = svd.fit_transform(item_user_matrix)
+
+        # Phân cụm item
+        kmeans = MiniBatchKMeans(
+            n_clusters=n_clusters,
+            random_state=42,
+            batch_size=256
+        )
+        item_cluster_labels = kmeans.fit_predict(item_factors)
+        cluster_to_items = {}
+        for item_id, c in enumerate(item_cluster_labels):
+            cluster_to_items.setdefault(c, set()).add(item_id)
+        self.hardNeg = []
+        self.easyNeg = []
+
+        all_items_set = set(range(self.m_items))
+
+        for u in range(self.n_users):
+            pos_items = set(self._allPos[u])
+
+            # User không có positive (trường hợp hiếm)
+            if len(pos_items) == 0:
+                self.hardNeg.append(np.array([], dtype=np.int64))
+                self.easyNeg.append(np.array(list(all_items_set), dtype=np.int64))
+                continue
+
+            # Đếm xem positive của user thuộc cụm nào nhiều nhất
+            pos_clusters = [item_cluster_labels[i] for i in pos_items]
+            cluster_count = np.bincount(pos_clusters, minlength=n_clusters)
+            dominant_cluster = cluster_count.argmax()
+
+            # Hard negative: cùng cụm dominant nhưng không phải positive
+            items_in_dom = cluster_to_items[dominant_cluster]
+            hard_neg = items_in_dom - pos_items
+
+            # Easy negative: ngoài cụm dominant và không phải positive
+            easy_neg = (all_items_set - items_in_dom) - pos_items
+
+            self.hardNeg.append(np.array(list(hard_neg), dtype=np.int64))
+            self.easyNeg.append(np.array(list(easy_neg), dtype=np.int64))
+            
+#-----------------------------------------------------------------------------------------------------------
+#############--------------------Newly Negative Sample for cluster sampler---------------------#############
+#-----------------------------------------------------------------------------------------------------------
         print(f"{world.dataset} is ready to go")
 
     @property
