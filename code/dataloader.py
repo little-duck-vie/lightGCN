@@ -112,6 +112,7 @@ class LastFM(BasicDataset):
         
         # pre-calculate
         self._allPos = self.getUserPosItems(list(range(self.n_users)))
+        build_cluster_sampler_state(self, n_clusters=n_clusters, svd_dim=svd_dim, seed=42, verbose=True)
         self.allNeg = []
         allItems    = set(range(self.m_items))
         for i in range(self.n_users):
@@ -124,50 +125,6 @@ class LastFM(BasicDataset):
 #############--------------------Newly Negative Sample for cluster sampler---------------------#############
 #-----------------------------------------------------------------------------------------------------------
 
-        item_user_matrix = self.UserItemNet.T   # sparse matrix
-
-        # Giảm chiều bằng TruncatedSVD (phù hợp với sparse matrix)
-        svd = TruncatedSVD(n_components=svd_dim, random_state=42)
-        item_factors = svd.fit_transform(item_user_matrix)
-
-        # Phân cụm item
-        kmeans = MiniBatchKMeans(
-            n_clusters=n_clusters,
-            random_state=42,
-            batch_size=256
-        )
-        item_cluster_labels = kmeans.fit_predict(item_factors)
-        cluster_to_items = {}
-        for item_id, c in enumerate(item_cluster_labels):
-            cluster_to_items.setdefault(c, set()).add(item_id)
-        self.hardNeg = []
-        self.easyNeg = []
-
-        all_items_set = set(range(self.m_items))
-
-        for u in range(self.n_users):
-            pos_items = set(self._allPos[u])
-
-            # User không có positive (trường hợp hiếm)
-            if len(pos_items) == 0:
-                self.hardNeg.append(np.array([], dtype=np.int64))
-                self.easyNeg.append(np.array(list(all_items_set), dtype=np.int64))
-                continue
-
-            # Đếm xem positive của user thuộc cụm nào nhiều nhất
-            pos_clusters = [item_cluster_labels[i] for i in pos_items]
-            cluster_count = np.bincount(pos_clusters, minlength=n_clusters)
-            dominant_cluster = cluster_count.argmax()
-
-            # Hard negative: cùng cụm dominant nhưng không phải positive
-            items_in_dom = cluster_to_items[dominant_cluster]
-            hard_neg = items_in_dom - pos_items
-
-            # Easy negative: ngoài cụm dominant và không phải positive
-            easy_neg = (all_items_set - items_in_dom) - pos_items
-
-            self.hardNeg.append(np.array(list(hard_neg), dtype=np.int64))
-            self.easyNeg.append(np.array(list(easy_neg), dtype=np.int64))
 
 #-----------------------------------------------------------------------------------------------------------
 #############--------------------Newly Negative Sample for cluster sampler---------------------#############
@@ -401,55 +358,13 @@ class Loader(BasicDataset):
         self.items_D[self.items_D == 0.] = 1.
         # pre-calculate
         self._allPos = self.getUserPosItems(list(range(self.n_user)))
+        build_cluster_sampler_state(self, n_clusters=n_clusters, svd_dim=svd_dim, seed=42, verbose=True)
         self.__testDict = self.__build_test()
 #-----------------------------------------------------------------------------------------------------------
 #############--------------------Newly Negative Sample for cluster sampler---------------------#############
 #-----------------------------------------------------------------------------------------------------------
 
-        item_user_matrix = self.UserItemNet.T   # sparse matrix
 
-        # Giảm chiều bằng TruncatedSVD (phù hợp với sparse matrix)
-        svd = TruncatedSVD(n_components=svd_dim, random_state=42)
-        item_factors = svd.fit_transform(item_user_matrix)
-
-        # Phân cụm item
-        kmeans = MiniBatchKMeans(
-            n_clusters=n_clusters,
-            random_state=42,
-            batch_size=256
-        )
-        item_cluster_labels = kmeans.fit_predict(item_factors)
-        cluster_to_items = {}
-        for item_id, c in enumerate(item_cluster_labels):
-            cluster_to_items.setdefault(c, set()).add(item_id)
-        self.hardNeg = []
-        self.easyNeg = []
-
-        all_items_set = set(range(self.m_items))
-
-        for u in range(self.n_users):
-            pos_items = set(self._allPos[u])
-
-            # User không có positive (trường hợp hiếm)
-            if len(pos_items) == 0:
-                self.hardNeg.append(np.array([], dtype=np.int64))
-                self.easyNeg.append(np.array(list(all_items_set), dtype=np.int64))
-                continue
-
-            # Đếm xem positive của user thuộc cụm nào nhiều nhất
-            pos_clusters = [item_cluster_labels[i] for i in pos_items]
-            cluster_count = np.bincount(pos_clusters, minlength=n_clusters)
-            dominant_cluster = cluster_count.argmax()
-
-            # Hard negative: cùng cụm dominant nhưng không phải positive
-            items_in_dom = cluster_to_items[dominant_cluster]
-            hard_neg = items_in_dom - pos_items
-
-            # Easy negative: ngoài cụm dominant và không phải positive
-            easy_neg = (all_items_set - items_in_dom) - pos_items
-
-            self.hardNeg.append(np.array(list(hard_neg), dtype=np.int64))
-            self.easyNeg.append(np.array(list(easy_neg), dtype=np.int64))
             
 #-----------------------------------------------------------------------------------------------------------
 #############--------------------Newly Negative Sample for cluster sampler---------------------#############
@@ -572,73 +487,66 @@ class Loader(BasicDataset):
     #     for user in users:
     #         negItems.append(self.allNeg[user])
     #     return negItems
-    def build_cluster_sampler_state(dataset, n_clusters=100, svd_dim=64, seed=42, verbose=True):
-        """
-        RAM-light cluster state:
-        - dataset.item_cluster: (m_items,)
-        - dataset.cluster2items: list[np.array]
-        - dataset.user_dom_cluster: (n_users,)
-        - dataset.posSet: list[set]  (tối ưu check positive)
-        Yêu cầu dataset có:
-        - dataset.UserItemNet (CSR, shape UxI)
-        - dataset._allPos
-        - dataset.n_users, dataset.m_items
-        """
-        if verbose:
-            print(f"[ClusterNeg] building clusters: n_clusters={n_clusters}, svd_dim={svd_dim}")
+def build_cluster_sampler_state(dataset, n_clusters=100, svd_dim=64, seed=42, verbose=True):
+    """
+    Precompute state cho cluster-aware negative sampling (RAM nhẹ).
+    dataset cần có:
+      - dataset.UserItemNet (CSR UxI)
+      - dataset._allPos
+      - dataset.n_users, dataset.m_items
+    Tạo ra:
+      - dataset.item_cluster
+      - dataset.cluster2items
+      - dataset.posSet
+      - dataset.user_dom_cluster
+    """
+    if verbose:
+        print(f"[ClusterNeg] build state: n_clusters={n_clusters}, svd_dim={svd_dim}")
 
-        # Item-user sparse matrix: (I, U)
-        X = dataset.UserItemNet.T.tocsr()
+    # (I, U)
+    X = dataset.UserItemNet.T.tocsr()
+    U = X.shape[1]
+    if U <= 1:
+        svd_dim_eff = 1
+    else:
+        svd_dim_eff = min(svd_dim, U - 1)
 
-        # SVD dim phải <= U-1
-        U = X.shape[1]
-        if U <= 1:
-            svd_dim_eff = 1
-        else:
-            svd_dim_eff = min(svd_dim, U - 1)
+    svd = TruncatedSVD(n_components=svd_dim_eff, random_state=seed)
+    item_emb = svd.fit_transform(X)  # (I, svd_dim)
 
-        # TruncatedSVD trên sparse
-        svd = TruncatedSVD(n_components=svd_dim_eff, random_state=seed)
-        item_emb = svd.fit_transform(X)  # (I, svd_dim)
+    kmeans = MiniBatchKMeans(
+        n_clusters=n_clusters,
+        random_state=seed,
+        batch_size=2048,
+        n_init="auto"
+    )
+    item_cluster = kmeans.fit_predict(item_emb).astype(np.int32)
 
-        # MiniBatchKMeans để nhanh hơn kmeans thường
-        kmeans = MiniBatchKMeans(
-            n_clusters=n_clusters,
-            random_state=seed,
-            batch_size=2048,
-            n_init="auto"
-        )
-        item_cluster = kmeans.fit_predict(item_emb).astype(np.int32)  # (I,)
+    dataset.item_cluster = item_cluster
+    dataset.cluster2items = [np.where(item_cluster == c)[0].astype(np.int32) for c in range(n_clusters)]
 
-        dataset.item_cluster = item_cluster
+    # positives set để membership O(1)
+    dataset.posSet = [set(p) for p in dataset._allPos]
 
-        # cluster2items: list các item id thuộc cluster c
-        dataset.cluster2items = []
-        for c in range(n_clusters):
-            dataset.cluster2items.append(np.where(item_cluster == c)[0].astype(np.int32))
+    # dominant cluster của mỗi user
+    dataset.user_dom_cluster = np.zeros(dataset.n_users, dtype=np.int32)
+    for u in range(dataset.n_users):
+        pos = dataset._allPos[u]
+        if len(pos) == 0:
+            dataset.user_dom_cluster[u] = 0
+            continue
+        cs = item_cluster[np.array(pos, dtype=np.int32)]
+        dataset.user_dom_cluster[u] = int(np.bincount(cs, minlength=n_clusters).argmax())
 
-        # posSet để membership O(1) (rất quan trọng về tốc độ)
-        dataset.posSet = [set(p) for p in dataset._allPos]
+    if verbose:
+        print("[ClusterNeg] done.")
 
-        # dominant cluster cho mỗi user
-        dataset.user_dom_cluster = np.zeros(dataset.n_users, dtype=np.int32)
-        for u in range(dataset.n_users):
-            pos = dataset._allPos[u]
-            if len(pos) == 0:
-                dataset.user_dom_cluster[u] = 0
-                continue
-            cs = item_cluster[np.array(pos, dtype=np.int32)]
-            cnt = np.bincount(cs, minlength=n_clusters)
-            dataset.user_dom_cluster[u] = int(cnt.argmax())
-
-        if verbose:
-            print("[ClusterNeg] done.")
 def sample_cluster_negative(dataset, user, p_hard=0.3, max_trials=50):
     """
-    Sample 1 negative item cho user:
-      - hard (p_hard): lấy item từ dominant cluster của user
-      - easy (1-p_hard): lấy item từ cluster khác dominant
-    Reject nếu item nằm trong positives của user.
+    Sample 1 negative item theo mix hard/easy:
+      - hard (p_hard): cùng dominant cluster
+      - easy: cluster khác dominant
+    Reject nếu item nằm trong positive.
     """
     dom = int(dataset.user_dom_cluster[user])
     pos = dataset.posSet[user]
@@ -646,18 +554,11 @@ def sample_cluster_negative(dataset, user, p_hard=0.3, max_trials=50):
 
     use_hard = (np.random.random() < p_hard)
 
-    if use_hard:
-        clusters = [dom]
-    else:
-        # chọn cluster khác dom
-        # (tránh tạo list dài mỗi lần, ta random cho nhanh)
-        clusters = None
-
     for _ in range(max_trials):
         if use_hard:
             c = dom
         else:
-            # random cluster != dom
+            # random cluster != dom (O(1), không tạo list)
             c = np.random.randint(0, n_clusters - 1)
             if c >= dom:
                 c += 1
@@ -665,11 +566,12 @@ def sample_cluster_negative(dataset, user, p_hard=0.3, max_trials=50):
         items = dataset.cluster2items[c]
         if len(items) == 0:
             continue
+
         neg = int(items[np.random.randint(0, len(items))])
         if neg not in pos:
             return neg
 
-    # fallback: random toàn cục (ít khi xảy ra)
+    # fallback
     while True:
         neg = np.random.randint(0, dataset.m_items)
         if neg not in pos:

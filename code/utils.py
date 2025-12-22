@@ -63,39 +63,24 @@ def UniformSample_original(dataset, neg_ratio = 1):
 
 def UniformSample_original_python(dataset, p_hard=0.3):
     """
-    BPR sampling với cluster-aware negative (RAM-light).
-    dataset cần có:
-      - dataset.allPos (dataset._allPos)
-      - dataset.posSet
-      - dataset.user_dom_cluster
-      - dataset.cluster2items
+    BPR sampler dùng cluster-aware negative sampling (RAM nhẹ).
     """
-    total_start = time()
     user_num = dataset.trainDataSize
-
     users = np.random.randint(0, dataset.n_users, user_num)
     allPos = dataset.allPos
 
     S = []
-    sample_time1 = 0.
-    sample_time2 = 0.
-
     for user in users:
-        start = time()
         posForUser = allPos[user]
         if len(posForUser) == 0:
             continue
-        sample_time2 += time() - start
 
         positem = int(posForUser[np.random.randint(0, len(posForUser))])
-
         negitem = sample_cluster_negative(dataset, int(user), p_hard=p_hard)
 
         S.append([int(user), positem, int(negitem)])
-        sample_time1 += time() - start
 
     return np.array(S, dtype=np.int64)
-
 
 # ===================end samplers==========================
 # =====================utils====================================
