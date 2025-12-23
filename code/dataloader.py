@@ -76,7 +76,7 @@ class LastFM(BasicDataset):
     Incldue graph information
     LastFM dataset
     """
-    def __init__(self, path="../data/lastfm", n_clusters=10, svd_dim=50):
+    def __init__(self, path="../data/lastfm", n_clusters=5, svd_dim=50):
         # train or test
         cprint("loading [last fm]")
         self.mode_dict = {'train':0, "test":1}
@@ -210,67 +210,6 @@ class LastFM(BasicDataset):
         for user in users:
             negItems.append(self.allNeg[user])
         return negItems
-    def build_cluster_sampler_state(dataset, n_clusters=100, svd_dim=64, seed=42, verbose=True):
-        """
-        RAM-light cluster state:
-        - dataset.item_cluster: (m_items,)
-        - dataset.cluster2items: list[np.array]
-        - dataset.user_dom_cluster: (n_users,)
-        - dataset.posSet: list[set]  (tối ưu check positive)
-        Yêu cầu dataset có:
-        - dataset.UserItemNet (CSR, shape UxI)
-        - dataset._allPos
-        - dataset.n_users, dataset.m_items
-        """
-        if verbose:
-            print(f"[ClusterNeg] building clusters: n_clusters={n_clusters}, svd_dim={svd_dim}")
-
-        # Item-user sparse matrix: (I, U)
-        X = dataset.UserItemNet.T.tocsr()
-
-        # SVD dim phải <= U-1
-        U = X.shape[1]
-        if U <= 1:
-            svd_dim_eff = 1
-        else:
-            svd_dim_eff = min(svd_dim, U - 1)
-
-        # TruncatedSVD trên sparse
-        svd = TruncatedSVD(n_components=svd_dim_eff, random_state=seed)
-        item_emb = svd.fit_transform(X)  # (I, svd_dim)
-
-        # MiniBatchKMeans để nhanh hơn kmeans thường
-        kmeans = MiniBatchKMeans(
-            n_clusters=n_clusters,
-            random_state=seed,
-            batch_size=2048,
-            n_init="auto"
-        )
-        item_cluster = kmeans.fit_predict(item_emb).astype(np.int32)  # (I,)
-
-        dataset.item_cluster = item_cluster
-
-        # cluster2items: list các item id thuộc cluster c
-        dataset.cluster2items = []
-        for c in range(n_clusters):
-            dataset.cluster2items.append(np.where(item_cluster == c)[0].astype(np.int32))
-
-        # posSet để membership O(1) (rất quan trọng về tốc độ)
-        dataset.posSet = [set(p) for p in dataset._allPos]
-
-        # dominant cluster cho mỗi user
-        dataset.user_dom_cluster = np.zeros(dataset.n_users, dtype=np.int32)
-        for u in range(dataset.n_users):
-            pos = dataset._allPos[u]
-            if len(pos) == 0:
-                dataset.user_dom_cluster[u] = 0
-                continue
-            cs = item_cluster[np.array(pos, dtype=np.int32)]
-            cnt = np.bincount(cs, minlength=n_clusters)
-            dataset.user_dom_cluster[u] = int(cnt.argmax())
-
-        if verbose:
-            print("[ClusterNeg] done.")
 
     def __getitem__(self, index):
         user = self.trainUniqueUsers[index]
@@ -293,7 +232,7 @@ class Loader(BasicDataset):
     gowalla dataset
     """
 
-    def __init__(self,config = world.config,path="../data/gowalla", n_clusters=10, svd_dim=50):
+    def __init__(self,config = world.config,path="../data/gowalla", n_clusters=5, svd_dim=50):
         # train or test
         cprint(f'loading [{path}]')
         self.split = config['A_split']
@@ -487,7 +426,7 @@ class Loader(BasicDataset):
     #     for user in users:
     #         negItems.append(self.allNeg[user])
     #     return negItems
-def build_cluster_sampler_state(dataset, n_clusters=20, svd_dim=64, seed=42, verbose=True):
+def build_cluster_sampler_state(dataset, n_clusters, svd_dim=64, seed=42, verbose=True):
     """
     Precompute state cho cluster-aware negative sampling (RAM nhẹ).
     dataset cần có:
