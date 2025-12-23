@@ -61,7 +61,7 @@ def UniformSample_original(dataset, neg_ratio = 1):
         S = UniformSample_original_python(dataset)
     return S
 
-def UniformSample_original_python(dataset, p_hard=5.0):
+def UniformSample_original_python(dataset, p_hard=3.0):
     """
     BPR sampler dùng cluster-aware negative sampling (RAM nhẹ).
     """
