@@ -43,4 +43,7 @@ def parse_args():
     parser.add_argument('--pretrain', type=int, default=0, help='whether we use pretrained weight or not')
     parser.add_argument('--seed', type=int, default=2020, help='random seed')
     parser.add_argument('--model', type=str, default='lgn', help='rec-model, support [mf, lgn]')
+    parser.add_argument('--cluster_num', type=int, default=5, help='number of clusters for cluster-aware negative sampling')
+    parser.add_argument('--svd_dim', type=int, default=50, help='number of svd dimensions for cluster-aware negative sampling')
+    parser.add_argument('--p_hard', type=float, default=1.0, help='probability of sampling hard negatives in cluster-aware negative sampling')
     return parser.parse_args()
