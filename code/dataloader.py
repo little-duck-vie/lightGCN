@@ -487,7 +487,7 @@ class Loader(BasicDataset):
     #     for user in users:
     #         negItems.append(self.allNeg[user])
     #     return negItems
-def build_cluster_sampler_state(dataset, n_clusters=100, svd_dim=64, seed=42, verbose=True):
+def build_cluster_sampler_state(dataset, n_clusters=10, svd_dim=64, seed=42, verbose=True):
     """
     Precompute state cho cluster-aware negative sampling (RAM nhẹ).
     dataset cần có:
@@ -541,7 +541,7 @@ def build_cluster_sampler_state(dataset, n_clusters=100, svd_dim=64, seed=42, ve
     if verbose:
         print("[ClusterNeg] done.")
 
-def sample_cluster_negative(dataset, user, p_hard=0.0, max_trials=50):
+def sample_cluster_negative(dataset, user, p_hard, max_trials=50):
     """
     Sample 1 negative item theo mix hard/easy:
       - hard (p_hard): cùng dominant cluster
