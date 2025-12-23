@@ -65,6 +65,7 @@ def UniformSample_original_python(dataset, p_hard=world.config['p_hard']):
     """
     BPR sampler dùng cluster-aware negative sampling (RAM nhẹ).
     """
+    print(f"Using cluster-aware negative sampling with p_hard={p_hard}")
     user_num = dataset.trainDataSize
     users = np.random.randint(0, dataset.n_users, user_num)
     allPos = dataset.allPos
