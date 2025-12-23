@@ -121,15 +121,6 @@ class LastFM(BasicDataset):
             self.allNeg.append(np.array(list(neg)))
         self.__testDict = self.__build_test()
 
-#-----------------------------------------------------------------------------------------------------------
-#############--------------------Newly Negative Sample for cluster sampler---------------------#############
-#-----------------------------------------------------------------------------------------------------------
-
-
-#-----------------------------------------------------------------------------------------------------------
-#############--------------------Newly Negative Sample for cluster sampler---------------------#############
-#-----------------------------------------------------------------------------------------------------------
-
     @property
     def n_users(self):
         return 1892
@@ -232,7 +223,7 @@ class Loader(BasicDataset):
     gowalla dataset
     """
 
-    def __init__(self,config = world.config,path="../data/gowalla", n_clusters=5, svd_dim=50):
+    def __init__(self,config = world.config,path="../data/gowalla", n_clusters=world.config['cluster_num'], svd_dim=world.config['svd_dim']):
         # train or test
         cprint(f'loading [{path}]')
         self.split = config['A_split']
@@ -303,7 +294,13 @@ class Loader(BasicDataset):
 #############--------------------Newly Negative Sample for cluster sampler---------------------#############
 #-----------------------------------------------------------------------------------------------------------
 
-
+        # item popularity = số lần item xuất hiện trong train
+        item_pop = np.array(self.UserItemNet.sum(axis=0)).squeeze().astype(np.int64)
+        self.item_pop = item_pop
+        # bỏ top X% popular để giảm false negative do missing exposure
+        pop_q = 0.99  # bạn có thể thử 0.98 / 0.995
+        pop_cut = np.quantile(item_pop, pop_q)
+        self.popular_mask = (item_pop >= pop_cut)   # True = quá popular
             
 #-----------------------------------------------------------------------------------------------------------
 #############--------------------Newly Negative Sample for cluster sampler---------------------#############
@@ -426,6 +423,17 @@ class Loader(BasicDataset):
     #     for user in users:
     #         negItems.append(self.allNeg[user])
     #     return negItems
+
+
+
+#-----------------------------------------------------------------------------------------------------------
+#############--------------------Newly Negative Sample for cluster sampler---------------------#############
+#-----------------------------------------------------------------------------------------------------------
+
+
+
+
+
 def build_cluster_sampler_state(dataset, n_clusters, svd_dim=64, seed=42, verbose=True):
     """
     Precompute state cho cluster-aware negative sampling (RAM nhẹ).
@@ -515,3 +523,12 @@ def sample_cluster_negative(dataset, user, p_hard, max_trials=50):
         neg = np.random.randint(0, dataset.m_items)
         if neg not in pos:
             return int(neg)
+
+
+
+
+#-----------------------------------------------------------------------------------------------------------
+#############--------------------Newly Negative Sample for cluster sampler---------------------#############
+#-----------------------------------------------------------------------------------------------------------
+
+
