@@ -514,41 +514,33 @@ def build_allPosNew(dataset, verbose=True):
     if verbose:
         print("[AllPosNew] done.")
 
-def sample_cluster_negative(dataset, user, p_hard, max_trials=50):
+def sample_same_cluster_negative(dataset, user, positem, max_trials=50):
     """
-    Sample 1 negative item theo mix hard/easy:
-      - hard (p_hard): cùng dominant cluster
-      - easy: cluster khác dominant
-    Reject nếu item nằm trong positive.
+    positem thuộc cluster c nào => negitem cũng lấy trong cluster c đó.
+    Reject nếu neg nằm trong positive của user.
     """
-    dom = int(dataset.user_dom_cluster[user])
+    c = int(dataset.item_cluster[positem])
+    items = dataset.cluster2items[c]
     pos = dataset.posSet[user]
-    n_clusters = len(dataset.cluster2items)
 
-    use_hard = (np.random.random() < p_hard)
+    if len(items) == 0:
+        # fallback: random toàn bộ items
+        while True:
+            neg = int(np.random.randint(0, dataset.m_items))
+            if neg not in pos:
+                return neg
 
+    # thử lấy trong cùng cluster
     for _ in range(max_trials):
-        if use_hard:
-            c = dom
-        else:
-            # random cluster != dom (O(1), không tạo list)
-            c = np.random.randint(0, n_clusters - 1)
-            if c >= dom:
-                c += 1
-
-        items = dataset.cluster2items[c]
-        if len(items) == 0:
-            continue
-
         neg = int(items[np.random.randint(0, len(items))])
         if neg not in pos:
             return neg
 
-    # fallback
+    # fallback nếu cluster bị "đầy" positives đối với user
     while True:
-        neg = np.random.randint(0, dataset.m_items)
+        neg = int(np.random.randint(0, dataset.m_items))
         if neg not in pos:
-            return int(neg)
+            return neg
 
 def sample_negative_allPosNew(dataset, user, max_trials=200):
     """
