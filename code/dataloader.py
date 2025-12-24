@@ -289,6 +289,7 @@ class Loader(BasicDataset):
         # pre-calculate
         self._allPos = self.getUserPosItems(list(range(self.n_user)))
         build_cluster_sampler_state(self, n_clusters=n_clusters, svd_dim=svd_dim, seed=42, verbose=True)
+        build_allPosNew(self)
         self.__testDict = self.__build_test()
 #-----------------------------------------------------------------------------------------------------------
 #############--------------------Newly Negative Sample for cluster sampler---------------------#############
@@ -487,6 +488,31 @@ def build_cluster_sampler_state(dataset, n_clusters, svd_dim=64, seed=42, verbos
 
     if verbose:
         print("[ClusterNeg] done.")
+def build_allPosNew(dataset, verbose=True):
+    """
+    allPosNew[u] = positives cũ + tất cả item thuộc dominant cluster của user u
+    Lưu dưới dạng set để membership O(1)
+    """
+    if verbose:
+        print("[AllPosNew] building...")
+
+    # pos cũ
+    posSet = [set(p) for p in dataset._allPos]
+
+    # allPosNew
+    allPosNew = [None] * dataset.n_users
+    for u in range(dataset.n_users):
+        dom = int(dataset.user_dom_cluster[u])
+        dom_items = dataset.cluster2items[dom]  # numpy array item ids
+        # union: pos cũ + toàn bộ item trong dominant cluster
+        s = posSet[u].copy()
+        s.update(dom_items.tolist())
+        allPosNew[u] = s
+
+    dataset.posSet = posSet                 # vẫn giữ nếu bạn cần
+    dataset.allPosNew = allPosNew           # NEW
+    if verbose:
+        print("[AllPosNew] done.")
 
 def sample_cluster_negative(dataset, user, p_hard, max_trials=50):
     """
@@ -524,6 +550,23 @@ def sample_cluster_negative(dataset, user, p_hard, max_trials=50):
         if neg not in pos:
             return int(neg)
 
+def sample_negative_allPosNew(dataset, user, max_trials=200):
+    """
+    Random negative sampling với điều kiện:
+      neg NOT IN allPosNew[user]
+    """
+    ban = dataset.allPosNew[user]
+
+    for _ in range(max_trials):
+        neg = int(np.random.randint(0, dataset.m_items))
+        if neg not in ban:
+            return neg
+
+    # fallback (chắc chắn ra)
+    while True:
+        neg = int(np.random.randint(0, dataset.m_items))
+        if neg not in ban:
+            return neg
 
 
 

@@ -10,7 +10,7 @@ import torch
 from torch import nn, optim
 import numpy as np
 from torch import log
-from dataloader import BasicDataset, sample_cluster_negative
+from dataloader import BasicDataset, sample_negative_allPosNew
 from time import time
 from model import LightGCN
 from model import PairWiseModel
@@ -65,7 +65,6 @@ def UniformSample_original_python(dataset, p_hard=world.config['p_hard']):
     """
     BPR sampler dùng cluster-aware negative sampling (RAM nhẹ).
     """
-    print(f"Using cluster-aware negative sampling with p_hard={p_hard}")
     user_num = dataset.trainDataSize
     users = np.random.randint(0, dataset.n_users, user_num)
     allPos = dataset.allPos
@@ -77,7 +76,7 @@ def UniformSample_original_python(dataset, p_hard=world.config['p_hard']):
             continue
 
         positem = int(posForUser[np.random.randint(0, len(posForUser))])
-        negitem = sample_cluster_negative(dataset, int(user), p_hard=p_hard)
+        negitem = sample_negative_allPosNew(dataset, user)
 
         S.append([int(user), positem, int(negitem)])
 
