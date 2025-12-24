@@ -289,7 +289,6 @@ class Loader(BasicDataset):
         # pre-calculate
         self._allPos = self.getUserPosItems(list(range(self.n_user)))
         build_cluster_sampler_state(self, n_clusters=n_clusters, svd_dim=svd_dim, seed=42, verbose=True)
-        build_allPosNew(self)
         self.__testDict = self.__build_test()
 #-----------------------------------------------------------------------------------------------------------
 #############--------------------Newly Negative Sample for cluster sampler---------------------#############
