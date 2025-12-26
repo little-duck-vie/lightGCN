@@ -600,7 +600,7 @@ def sample_same_cluster_negative(dataset, user, positem, max_trials=50):
 
     # thử lấy trong cùng cluster
     p = np.random.randint(0, 1)
-    if p < 0.7:
+    if p < world.config['p_hard']:
         for _ in range(max_trials):
             neg = int(items[np.random.randint(0, len(items))])
             if neg not in pos and neg not in extended_pos :
