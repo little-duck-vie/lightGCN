@@ -351,11 +351,11 @@ class Loader(BasicDataset):
             top_k_items = sorted_items[:k]
 
             self.extended_pos_items[u] = set(top_k_items)
-        print(f"neighbours of user 0: {self.user_neighbors[0]}")
-        for idx, item in enumerate(self.user_neighbors[0]):
-            print(f"  items of neighbor {item}: {self.user_pos[item]}")
-        print(f"original pos items of user 0: {self.user_pos[0]}")
-        print(f"pos user 0 original: {len(self.user_pos[0])}, extended: {self.extended_pos_items[0]}")
+        # print(f"neighbours of user 0: {self.user_neighbors[0]}")
+        # for idx, item in enumerate(self.user_neighbors[0]):
+        #     print(f"  items of neighbor {item}: {self.user_pos[item]}")
+        # print(f"original pos items of user 0: {self.user_pos[0]}")
+        # print(f"pos user 0 original: {len(self.user_pos[0])}, extended: {self.extended_pos_items[0]}")
         self.__testDict = self.__build_test()
         self._build_neg_sampling_helpers()
         # build_allPosNew(self)
@@ -597,13 +597,13 @@ def sample_same_cluster_negative(dataset, user, positem, max_trials=50):
         # fallback: random toàn bộ items
         while True:
             neg = int(np.random.randint(0, dataset.m_items))
-            if neg not in pos and neg not in extended_pos:
+            if neg not in pos:
                 return neg
 
     # thử lấy trong cùng cluster
     for _ in range(max_trials):
         neg = int(items[np.random.randint(0, len(items))])
-        if neg not in pos and neg not in extended_pos:
+        if neg not in pos:
             return neg
 
     # fallback nếu cluster bị "đầy" positives đối với user
@@ -612,23 +612,23 @@ def sample_same_cluster_negative(dataset, user, positem, max_trials=50):
         if neg not in pos:
             return neg
 
-def sample_negative_allPosNew(dataset, user, max_trials=200):
-    """
-    Random negative sampling với điều kiện:
-      neg NOT IN allPosNew[user]
-    """
-    ban = dataset.allPosNew[user]
+# def sample_negative_allPosNew(dataset, user, max_trials=200):
+#     """
+#     Random negative sampling với điều kiện:
+#       neg NOT IN allPosNew[user]
+#     """
+#     ban = dataset.allPosNew[user]
 
-    for _ in range(max_trials):
-        neg = int(np.random.randint(0, dataset.m_items))
-        if neg not in ban:
-            return neg
+#     for _ in range(max_trials):
+#         neg = int(np.random.randint(0, dataset.m_items))
+#         if neg not in ban:
+#             return neg
 
-    # fallback (chắc chắn ra)
-    while True:
-        neg = int(np.random.randint(0, dataset.m_items))
-        if neg not in ban:
-            return neg
+#     # fallback (chắc chắn ra)
+#     while True:
+#         neg = int(np.random.randint(0, dataset.m_items))
+#         if neg not in ban:
+#             return neg
 
 
 
