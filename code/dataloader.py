@@ -305,7 +305,7 @@ class Loader(BasicDataset):
 
         # 2. Calculate item frequency and remove popular items
         item_freq = {i: len(users) for i, users in self.item_users.items()}
-        hub_threshold = 50  # or adjust via config
+        hub_threshold = 200  # or adjust via config
         self.popular_items = {i for i, c in item_freq.items() if c > hub_threshold}
         print(f"Filtered out {len(self.popular_items)} popular items (>{hub_threshold} users).")
 
@@ -336,7 +336,7 @@ class Loader(BasicDataset):
             for v in self.user_neighbors[u]:
                 # Lấy các item của hàng xóm v, bỏ item đã có của u
                 for i in self.user_pos[v]:
-                    if i not in self.user_pos[u] and i not in self.popular_items:
+                    if i not in self.user_pos[u]:
                         extended_candidate_items.append(i)
 
             # Đếm độ phổ biến trong các hàng xóm
@@ -347,7 +347,7 @@ class Loader(BasicDataset):
             sorted_items = [item for item, count in item_counts.most_common()]
 
             # Giới hạn số lượng: k = 1/2 số lượng pos gốc
-            k = max(1, len(self.user_pos[u])//4)
+            k = max(1, len(self.user_pos[u])//2)
             top_k_items = sorted_items[:k]
 
             self.extended_pos_items[u] = set(top_k_items)
@@ -597,19 +597,19 @@ def sample_same_cluster_negative(dataset, user, positem, max_trials=50):
         # fallback: random toàn bộ items
         while True:
             neg = int(np.random.randint(0, dataset.m_items))
-            if neg not in pos:
+            if neg not in pos and neg not in extended_pos and neg not in dataset.popular_items:
                 return neg
 
     # thử lấy trong cùng cluster
     for _ in range(max_trials):
         neg = int(items[np.random.randint(0, len(items))])
-        if neg not in pos:
+        if neg not in pos and neg not in extended_pos and neg not in dataset.popular_items:
             return neg
 
     # fallback nếu cluster bị "đầy" positives đối với user
     while True:
         neg = int(np.random.randint(0, dataset.m_items))
-        if neg not in pos:
+        if neg not in pos and neg not in extended_pos and neg not in dataset.popular_items:
             return neg
 
 # def sample_negative_allPosNew(dataset, user, max_trials=200):
