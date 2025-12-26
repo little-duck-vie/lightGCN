@@ -305,7 +305,7 @@ class Loader(BasicDataset):
 
         # 2. Calculate item frequency and remove popular items
         item_freq = {i: len(users) for i, users in self.item_users.items()}
-        hub_threshold = 1000  # or adjust via config
+        hub_threshold = 200  # or adjust via config
         self.popular_items = {i for i, c in item_freq.items() if c > hub_threshold}
         print(f"Filtered out {len(self.popular_items)} popular items (>{hub_threshold} users).")
 
@@ -348,6 +348,7 @@ class Loader(BasicDataset):
             top_k_items = sorted_items[:k]
 
             self.extended_pos_items[u] = set(top_k_items)
+        print(f"neighbours of user 0: {self.user_neighbors[0]}")
         print(f"pos user 0 original: {len(self.user_pos[0])}, extended: {self.extended_pos_items[0]}")
         self.__testDict = self.__build_test()
         self._build_neg_sampling_helpers()
