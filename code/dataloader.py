@@ -344,8 +344,8 @@ class Loader(BasicDataset):
             sorted_items = [item for item, count in item_counts.most_common()]
 
             # Giới hạn số lượng: k = 1/2 số lượng pos gốc
-            # k = max(1, len(self.user_pos[u]))
-            top_k_items = sorted_items[:]
+            k = max(1, len(self.user_pos[u]))
+            top_k_items = sorted_items[:k]
 
             self.extended_pos_items[u] = set(top_k_items)
         print(f"pos user 0 original: {len(self.user_pos[0])}, extended: {len(self.extended_pos_items[0])}")
