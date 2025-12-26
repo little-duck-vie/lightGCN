@@ -294,13 +294,65 @@ class Loader(BasicDataset):
 #############--------------------Newly Negative Sample for cluster sampler---------------------#############
 #-----------------------------------------------------------------------------------------------------------
 
-        # item popularity = số lần item xuất hiện trong train
-        item_pop = np.array(self.UserItemNet.sum(axis=0)).squeeze().astype(np.int64)
-        self.item_pop = item_pop
-        # bỏ top X% popular để giảm false negative do missing exposure
-        pop_q = 0.99  # bạn có thể thử 0.98 / 0.995
-        pop_cut = np.quantile(item_pop, pop_q)
-        self.popular_mask = (item_pop >= pop_cut)   # True = quá popular
+        print("Building extended positive items via neighbor sharing...")
+
+        # 1. Build user_pos and item_users
+        self.user_pos = {u: set(self._allPos[u]) for u in range(self.n_user)}
+        self.item_users = {i: set() for i in range(self.m_item)}
+        for u, items in self.user_pos.items():
+            for i in items:
+                self.item_users[i].add(u)
+
+        # 2. Calculate item frequency and remove popular items
+        item_freq = {i: len(users) for i, users in self.item_users.items()}
+        hub_threshold = 200  # or adjust via config
+        self.popular_items = {i for i, c in item_freq.items() if c > hub_threshold}
+        print(f"Filtered out {len(self.popular_items)} popular items (>{hub_threshold} users).")
+
+        # 3. Compute neighbors and extended positives
+        import heapq
+        M = 5  # top-M neighbors, can be moved to args
+        self.user_neighbors = {}
+        self.extended_pos_items = {}
+
+        for u in range(self.n_user):
+            counter = {}
+            for i in self.user_pos[u]:
+                if i in self.popular_items:
+                    continue
+                for v in self.item_users[i]:
+                    if v == u:
+                        continue
+                    counter[v] = counter.get(v, 0) + 1
+            top_neighbors = heapq.nlargest(M, counter.items(), key=lambda x: x[1])
+            self.user_neighbors[u] = [v for v, _ in top_neighbors]
+
+            # Build extended item set from neighbors
+            extended_candidate_items = []
+
+            for v in self.user_neighbors[u]:
+                # Lấy các item của hàng xóm v, bỏ item đã có của u
+                for i in self.user_pos[v]:
+                    if i not in self.user_pos[u]:
+                        extended_candidate_items.append(i)
+
+            # Đếm độ phổ biến trong các hàng xóm
+            from collections import Counter
+            item_counts = Counter(extended_candidate_items)
+
+            # Sắp xếp theo phổ biến nhất (trong các hàng xóm)
+            sorted_items = [item for item, count in item_counts.most_common()]
+
+            # Giới hạn số lượng: k = 1/2 số lượng pos gốc
+            # k = max(1, len(self.user_pos[u]))
+            top_k_items = sorted_items[:]
+
+            self.extended_pos_items[u] = set(top_k_items)
+        print(f"pos user 0 original: {len(self.user_pos[0])}, extended: {len(self.extended_pos_items[0])}")
+        self.__testDict = self.__build_test()
+        self._build_neg_sampling_helpers()
+        # build_allPosNew(self)
+        print(f"{world.dataset} is ready to go")
             
 #-----------------------------------------------------------------------------------------------------------
 #############--------------------Newly Negative Sample for cluster sampler---------------------#############
@@ -424,7 +476,15 @@ class Loader(BasicDataset):
     #         negItems.append(self.allNeg[user])
     #     return negItems
 
+    def _build_neg_sampling_helpers(self):
+        # 1) posSet để check O(1)
+        self.posSet = [set(p) for p in self.allPos]   # hoặc self._allPos, tùy code bạn dùng
 
+        # 2) item -> users CSR
+        self.item_user_csr = self.UserItemNet.T.tocsr()
+
+        # 3) popularity (giảm bias)
+        self.item_pop = np.asarray(self.UserItemNet.sum(axis=0)).ravel().astype(np.int64)
 
 #-----------------------------------------------------------------------------------------------------------
 #############--------------------Newly Negative Sample for cluster sampler---------------------#############
@@ -487,31 +547,35 @@ def build_cluster_sampler_state(dataset, n_clusters, svd_dim=64, seed=42, verbos
 
     if verbose:
         print("[ClusterNeg] done.")
-def build_allPosNew(dataset, verbose=True):
-    """
-    allPosNew[u] = positives cũ + tất cả item thuộc dominant cluster của user u
-    Lưu dưới dạng set để membership O(1)
-    """
-    if verbose:
-        print("[AllPosNew] building...")
+# def build_allPosNew(dataset, verbose=True):
+#     """
+#     allPosNew[u] = positives cũ + tất cả item thuộc dominant cluster của user u
+#     Lưu dưới dạng set để membership O(1)
+#     """
+#     if verbose:
+#         print("[AllPosNew] building...")
 
-    # pos cũ
-    posSet = [set(p) for p in dataset._allPos]
+#     # pos cũ
+#     posSet = [set(p) for p in dataset._allPos]
 
-    # allPosNew
-    allPosNew = [None] * dataset.n_users
-    for u in range(dataset.n_users):
-        dom = int(dataset.user_dom_cluster[u])
-        dom_items = dataset.cluster2items[dom]  # numpy array item ids
-        # union: pos cũ + toàn bộ item trong dominant cluster
-        s = posSet[u].copy()
-        s.update(dom_items.tolist())
-        allPosNew[u] = s
+#     # allPosNew
+#     allPosNew = [None] * dataset.n_users
+#     for u in range(dataset.n_users):
+#         dom = int(dataset.user_dom_cluster[u])
+#         dom_items = dataset.cluster2items[dom]  # numpy array item ids
+#         # union: pos cũ + toàn bộ item trong dominant cluster
+#         s = posSet[u].copy()
+#         s.update(dom_items.tolist())
+#         if hasattr(dataset, "extended_pos_items") and dataset.extended_pos_items[u]:
+#             s.update(dataset.extended_pos_items[u])
+#         allPosNew[u] = s
 
-    dataset.posSet = posSet                 # vẫn giữ nếu bạn cần
-    dataset.allPosNew = allPosNew           # NEW
-    if verbose:
-        print("[AllPosNew] done.")
+#     dataset.posSet = posSet                 # vẫn giữ nếu bạn cần
+#     dataset.allPosNew = allPosNew           # NEW
+#     print(f"all pos user 0{len(posSet[0])}")
+#     print(f"all pos new user 0 {len(allPosNew[0])}")
+#     if verbose:
+#         print("[AllPosNew] done.")
 
 def sample_same_cluster_negative(dataset, user, positem, max_trials=50):
     """
@@ -521,18 +585,18 @@ def sample_same_cluster_negative(dataset, user, positem, max_trials=50):
     c = int(dataset.item_cluster[positem])
     items = dataset.cluster2items[c]
     pos = dataset.posSet[user]
-
+    extended_pos = dataset.extended_pos_items[user] 
     if len(items) == 0:
         # fallback: random toàn bộ items
         while True:
             neg = int(np.random.randint(0, dataset.m_items))
-            if neg not in pos:
+            if neg not in pos and neg not in extended_pos:
                 return neg
 
     # thử lấy trong cùng cluster
     for _ in range(max_trials):
         neg = int(items[np.random.randint(0, len(items))])
-        if neg not in pos:
+        if neg not in pos and neg not in extended_pos:
             return neg
 
     # fallback nếu cluster bị "đầy" positives đối với user
