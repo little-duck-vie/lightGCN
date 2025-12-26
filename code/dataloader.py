@@ -305,13 +305,13 @@ class Loader(BasicDataset):
 
         # 2. Calculate item frequency and remove popular items
         item_freq = {i: len(users) for i, users in self.item_users.items()}
-        hub_threshold = 200  # or adjust via config
+        hub_threshold = 50  # or adjust via config
         self.popular_items = {i for i, c in item_freq.items() if c > hub_threshold}
         print(f"Filtered out {len(self.popular_items)} popular items (>{hub_threshold} users).")
 
         # 3. Compute neighbors and extended positives
         import heapq
-        M = 5  # top-M neighbors, can be moved to args
+        M = 10  # top-M neighbors, can be moved to args
         self.user_neighbors = {}
         self.extended_pos_items = {}
 
@@ -323,7 +323,10 @@ class Loader(BasicDataset):
                 for v in self.item_users[i]:
                     if v == u:
                         continue
-                    counter[v] = counter.get(v, 0) + 1
+                    Iu = self.user_pos[u]
+                    Iv = self.user_pos[v]
+                    sim = len(Iu & Iv) / len(Iu | Iv)
+                    counter[v] = sim
             top_neighbors = heapq.nlargest(M, counter.items(), key=lambda x: x[1])
             self.user_neighbors[u] = [v for v, _ in top_neighbors]
 
@@ -333,7 +336,7 @@ class Loader(BasicDataset):
             for v in self.user_neighbors[u]:
                 # Lấy các item của hàng xóm v, bỏ item đã có của u
                 for i in self.user_pos[v]:
-                    if i not in self.user_pos[u]:
+                    if i not in self.user_pos[u] and i not in self.popular_items:
                         extended_candidate_items.append(i)
 
             # Đếm độ phổ biến trong các hàng xóm
@@ -349,6 +352,9 @@ class Loader(BasicDataset):
 
             self.extended_pos_items[u] = set(top_k_items)
         print(f"neighbours of user 0: {self.user_neighbors[0]}")
+        for idx, item in enumerate(self.user_neighbors[0]):
+            print(f"  items of neighbor {item}: {self.user_pos[item]}")
+        print(f"original pos items of user 0: {self.user_pos[0]}")
         print(f"pos user 0 original: {len(self.user_pos[0])}, extended: {self.extended_pos_items[0]}")
         self.__testDict = self.__build_test()
         self._build_neg_sampling_helpers()
