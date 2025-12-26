@@ -364,8 +364,6 @@ class Loader(BasicDataset):
 #-----------------------------------------------------------------------------------------------------------
 #############--------------------Newly Negative Sample for cluster sampler---------------------#############
 #-----------------------------------------------------------------------------------------------------------
-        print(f"{world.dataset} is ready to go")
-
     @property
     def n_users(self):
         return self.n_user
@@ -597,19 +595,26 @@ def sample_same_cluster_negative(dataset, user, positem, max_trials=50):
         # fallback: random toàn bộ items
         while True:
             neg = int(np.random.randint(0, dataset.m_items))
-            if neg not in pos and neg not in extended_pos and neg not in dataset.popular_items:
+            if neg not in pos and neg not in extended_pos:
                 return neg
 
     # thử lấy trong cùng cluster
-    for _ in range(max_trials):
-        neg = int(items[np.random.randint(0, len(items))])
-        if neg not in pos and neg not in extended_pos and neg not in dataset.popular_items:
-            return neg
+    p = np.random.randint(0, 1)
+    if p < 0.7:
+        for _ in range(max_trials):
+            neg = int(items[np.random.randint(0, len(items))])
+            if neg not in pos and neg not in extended_pos :
+                return neg
+    else :
+        for _ in range(max_trials):
+            neg = np.random.randint(0, dataset.m_items)
+            if neg not in pos and neg not in extended_pos and neg not in items:
+                return neg
 
     # fallback nếu cluster bị "đầy" positives đối với user
     while True:
         neg = int(np.random.randint(0, dataset.m_items))
-        if neg not in pos and neg not in extended_pos and neg not in dataset.popular_items:
+        if neg not in pos and neg not in extended_pos :
             return neg
 
 # def sample_negative_allPosNew(dataset, user, max_trials=200):
